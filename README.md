@@ -1259,3 +1259,571 @@ dimana cara kerjanya sebagai berikut.
 ![Image](https://github.com/user-attachments/assets/e556071c-e93a-4d8f-a99c-82c61de1f501)
 
 <h2 id="soal4">Soal4</h2>
+
+
+<p>
+Pada soal ini ini kita diminta untuk membantu hunter lemah bernama Sung Jin Woo yang telah bereinkarnasi menjadi admin untuk membuat program dalam bahasa c yang berisi:<br>
+  1. Membuat file bernama hunter.c dan system.c serta download clue agar memudahkan pekerjaannya.<br>
+  2. Registrasi dan logini untuk hunter.<br>
+  3. Menampilkan informasi hunter yang terdaftar.<br>
+  4. Menghasilkan dungeon secara acak.<br>
+  5. Menampilkan informasi semua dungeon.<br>
+  6. Menampilkan semua dungeon yang tersedia sesuai level hunter.<br>
+  7. Ketika hunter berhasil menaklukan dungeon, dungeon tersebut akan menghilang dari sistem dan hunter mendapatkan stat rewards.<br>
+  8. Hunter bisa bertarung dengan hunter lainnya.<br>
+  9. Banned hunter.<br>
+  10. Unbanned hunter.<br>
+  11. Menampilkan semua dungeon yang terbuka dan akan terus berganti selama 3 detik.<br>
+  12. Setiap kali sistem dimatikan, maka semua shared memory akan terhapus.
+  </p>
+
+**hunter.c**
+
+```c
+void set_terminal_mode(int enable) {
+    static struct termios oldt, newt;
+    if (!enable) {
+        tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+    } else {
+        tcgetattr(STDIN_FILENO, &oldt);
+        newt = oldt;
+        newt.c_lflag &= ~(ICANON | ECHO);
+        tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+    }
+}
+```
+
+<p>
+Kode tersebut berfungsi untuk mengubah mode terminal antara "normal" dan "raw".
+</p>
+
+```c
+struct Hunter *login_hunter(struct SystemData *sys) {
+    char name[50];
+    printf("Username: ");
+    scanf("%s", name);
+
+    for (int i = 0; i < sys->num_hunters; i++) {
+        if (strcmp(sys->hunters[i].username, name) == 0 && !sys->hunters[i].banned) {
+            printf("[LOGIN] Welcome, %s!\n", name);
+            return &sys->hunters[i];
+        }
+    }
+
+    printf("Hunter not found or banned.\n");
+    return NULL;
+}
+```
+
+<p>
+Kode tersebut berfungsi untuk melakukan proses login hunter (pemain) dalam sistem berbasis struktur.
+</p>
+
+```c
+void register_hunter(struct SystemData *sys) {
+    if (sys->num_hunters >= MAX_HUNTERS) {
+        printf("Max hunter reached!\n");
+        return;
+    }
+
+    char name[50];
+    printf("Username: ");
+    scanf("%s", name);
+
+    for (int i = 0; i < sys->num_hunters; i++) {
+        if (strcmp(sys->hunters[i].username, name) == 0) {
+            printf("Username taken!\n");
+            return;
+        }
+    }
+
+    struct Hunter h;
+    strcpy(h.username, name);
+    h.level = 1;
+    h.exp = 0;
+    h.atk = 10;
+    h.hp = 100;
+    h.def = 5;
+    h.banned = 0;
+    h.shm_key = rand();
+
+    sys->hunters[sys->num_hunters++] = h;
+    printf("Registration success!\n");
+}
+```
+
+<p>
+Kode tersebut berfungsi untuk mendaftarkan hunter (pemain) baru ke dalam sistem, selama belum melebihi batas maksimal dan username belum digunakan.
+</p>
+
+```c
+void list_available_dungeons(struct SystemData *sys, struct Hunter *h) {
+    printf("=== AVAILABLE DUNGEONS ===\n");
+    for (int i = 0; i < sys->num_dungeons; i++) {
+        struct Dungeon d = sys->dungeons[i];
+        if (h->level >= d.min_level) {
+            printf("%d. %s (Level %d+)\n", i + 1, d.name, d.min_level);
+        }
+    }
+}
+```
+
+<p>
+Kode tersebut berfunsi untuk menampilkan daftar dungeon yang dapat diakses oleh seorang hunter, berdasarkan level hunter tersebut.
+</p>
+
+```c
+void raid_dungeon(struct SystemData *sys, struct Hunter *h) {
+    list_available_dungeons(sys, h);
+    int c;
+    printf("Choose Dungeon: ");
+    scanf("%d", &c); c--;
+
+    if (c < 0 || c >= sys->num_dungeons || h->level < sys->dungeons[c].min_level) {
+        printf("Invalid dungeon!\n");
+        return;
+    }
+
+    struct Dungeon d = sys->dungeons[c];
+
+    h->atk += d.atk;
+    h->hp += d.hp;
+    h->def += d.def;
+    h->exp += d.exp;
+
+    printf("Raid success! Gained:\nATK: %d\nHP: %d\nDEF: %d\nEXP: %d\n", d.atk, d.hp, d.def, d.exp);
+
+    if (h->exp >= 500) {
+        h->level++;
+        h->exp = 0;
+        printf("Level up! Now Level %d\n", h->level);
+    }
+
+    for (int i = c; i < sys->num_dungeons - 1; i++) {
+        sys->dungeons[i] = sys->dungeons[i + 1];
+    }
+    sys->num_dungeons--;
+}
+```
+
+<p>
+Kode tersebut berfungsi untuk melakukan raid di dungeon oleh seorang hunter, yang akan mempengaruhi statistik hunter dan dungeon yang sudah diserang.
+</p>
+
+```c
+void battle_hunter(struct SystemData *sys, struct Hunter *h) {
+    printf("=== PVP LIST ===\n");
+    for (int i = 0; i < sys->num_hunters; i++) {
+        if (strcmp(h->username, sys->hunters[i].username) != 0 && !sys->hunters[i].banned) {
+            int pow = sys->hunters[i].atk + sys->hunters[i].hp + sys->hunters[i].def;
+            printf("%s - Total Power: %d\n", sys->hunters[i].username, pow);
+        }
+    }
+
+    char target[50];
+    printf("Target: ");
+    scanf("%s", target);
+
+    for (int i = 0; i < sys->num_hunters; i++) {
+        if (strcmp(sys->hunters[i].username, target) == 0) {
+            int my_pow = h->atk + h->hp + h->def;
+            int their_pow = sys->hunters[i].atk + sys->hunters[i].hp + sys->hunters[i].def;
+
+            if (my_pow >= their_pow) {
+                printf("You won the battle!\n");
+                h->atk += sys->hunters[i].atk;
+                h->hp += sys->hunters[i].hp;
+                h->def += sys->hunters[i].def;
+
+                for (int j = i; j < sys->num_hunters - 1; j++) {
+                    sys->hunters[j] = sys->hunters[j + 1];
+                }
+                sys->num_hunters--;
+            } else {
+                printf("You lost the battle!\n");
+
+                sys->hunters[i].atk += h->atk;
+                sys->hunters[i].hp += h->hp;
+                sys->hunters[i].def += h->def;
+
+                for (int j = 0; j < sys->num_hunters; j++) {
+                    if (strcmp(sys->hunters[j].username, h->username) == 0) {
+                        for (int k = j; k < sys->num_hunters - 1; k++) {
+                            sys->hunters[k] = sys->hunters[k + 1];
+                        }
+                        sys->num_hunters--;
+                        break;
+                    }
+                }
+            }
+            return;
+        }
+    }
+
+    printf("Target not found.\n");
+}
+```
+
+<p>
+Kode tersebut berfungsi untuk melakukan pertarungan antar hunter (PvP) di dalam sistem, di mana hunter memilih target untuk bertarung, dan pemenang mendapatkan statistik dari yang kalah, sementara yang kalah dihapus dari sistem.
+</p>
+
+```c
+void show_notifications(struct Hunter *hunter, struct SystemData *sys) {
+    printf("\n--- NOTIFICATION MODE ---\n");
+    printf("Press 'q' then ENTER to exit notifications.\n");
+
+    set_terminal_mode(1);
+    int index = 0;
+
+    while (1) {
+        system("clear");
+
+        printf("=== HUNTER SYSTEM ===\n");
+
+        if (sys->num_dungeons == 0) {
+            printf("No dungeons available.\n");
+        } else {
+            int count = 0;
+            for (int i = 0; i < sys->num_dungeons; i++) {
+                if (sys->dungeons[i].min_level <= hunter->level) count++;
+            }
+
+            if (count == 0) {
+                printf("No dungeon available for your level yet.\n");
+            } else {
+                index = index % sys->num_dungeons;
+                struct Dungeon *d = &sys->dungeons[index];
+                if (d->min_level <= hunter->level) {
+                    printf("%s for minimum level %d opened!\n", d->name, d->min_level);
+                } else {
+                    printf("Waiting for new dungeon unlocks...\n");
+                }
+                index++;
+            }
+        }
+
+        printf("=== %s's MENU ===\n", hunter->username);
+        printf("1. Dungeon List\n2. Dungeon Raid\n3. Hunter's Battle\n4. Notification\n5. Exit\n");
+        printf("Press 'q' to return to main menu...\n");
+
+        fd_set set;
+        struct timeval timeout;
+        FD_ZERO(&set);
+        FD_SET(STDIN_FILENO, &set);
+
+        timeout.tv_sec = 3;
+        timeout.tv_usec = 0;
+
+        int ret = select(STDIN_FILENO + 1, &set, NULL, NULL, &timeout);
+
+        if (ret > 0) {
+            char c = getchar();
+            if (c == 'q' || c == 'Q') {
+                break;
+            }
+        }
+    }
+
+    set_terminal_mode(0);
+}
+```
+
+<p>
+Kode tersebut berfungsi untuk menampilkan notifikasi secara periodik kepada seorang hunter, termasuk informasi dungeon yang tersedia berdasarkan level hunter, dan memungkinkan hunter untuk keluar dari mode notifikasi dengan menekan 'q'.
+</p>
+
+```c
+void cleanup_shared_memory(int shmid, void *shm_ptr) {
+    shmdt(shm_ptr);
+    shmctl(shmid, IPC_RMID, NULL);
+    printf("[INFO] Shared memory cleaned up.\n");
+}
+```
+
+<p>
+Kode tersebut berfungsi untuk membersihkan dan melepaskan shared memory yang telah digunakan, serta menghapusnya dari sistem.
+</p>
+
+```c
+void signal_handler(int sig) {
+    key_t key = get_system_key();
+    int shmid = shmget(key, sizeof(struct SystemData), 0666);
+    if (shmid != -1) {
+        void *shm_ptr = shmat(shmid, NULL, 0);
+        if (shm_ptr != (void *) -1) {
+            cleanup_shared_memory(shmid, shm_ptr);
+        }
+    }
+    exit(0);
+}
+```
+
+<p>
+Kode tersebut berfungsi  untuk menangani sinyal (signal) yang diterima oleh program, melakukan pembersihan shared memory yang terkait, dan kemudian keluar dari program dengan exit(0).
+</p>
+
+```c
+int main() {
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
+
+    key_t key = get_system_key();
+    int shmid = shmget(key, sizeof(struct SystemData), 0666);
+    if (shmid == -1) {
+        perror("shmget failed");
+        exit(1);
+    }
+
+    struct SystemData *sys = shmat(shmid, NULL, 0);
+    if (sys == (void *) -1) {
+        perror("shmat failed");
+        exit(1);
+    }
+
+    int choice;
+    struct Hunter *login = NULL;
+
+    while (1) {
+        if (!login) {
+            printf("=== HUNTER SYSTEM ===\n1. Register\n2. Login\n3. Exit\nChoice: ");
+            scanf("%d", &choice);
+            if (choice == 1) register_hunter(sys);
+            else if (choice == 2) login = login_hunter(sys);
+            else break;
+        } else {
+            printf("\n=== %s's MENU ===\n", login->username);
+            printf("1. Dungeon List\n2. Dungeon Raid\n3. Hunter's Battle\n4. Notification\n5. Exit\nChoice: ");
+            scanf("%d", &choice);
+
+            if (choice == 1) list_available_dungeons(sys, login);
+            else if (choice == 2) raid_dungeon(sys, login);
+            else if (choice == 3) battle_hunter(sys, login);
+            else if (choice == 4) show_notifications(login, sys);
+            else login = NULL;
+        }
+    }
+
+    cleanup_shared_memory(shmid, sys);
+    return 0;
+}
+
+```
+
+<p>
+Kode tersebut berfungsi untuk mengelola program berbasis sistem hunter menggunakan shared memory, di mana pengguna dapat mendaftar, login, memilih berbagai pilihan menu seperti daftar dungeon, raid dungeon, bertarung dengan hunter lain, serta mengakses notifikasi. Kode ini juga menangani pembersihan shared memory ketika aplikasi dihentikan, baik secara normal maupun saat menerima sinyal seperti SIGINT (Ctrl+C) atau SIGTERM.
+</p>
+
+**system.c**
+```c
+char *dungeon_names[] = {
+    "Double Dungeon", "Demon Castle", "Pyramid Dungeon", "Red Gate Dungeon",
+    "Hunters Guild Dungeon", "Busan A-Rank Dungeon", "Insects Dungeon",
+    "Goblins Dungeon", "D-Rank Dungeon", "Gwanak Mountain Dungeon",
+    "Hapjeong Subway Station Dungeon"
+};
+```
+
+<p>
+Kode tersebut berfungsi untuk mendeklarasikan dan menginisialisasi sebuah array dungeon_names[] yang berisi daftar nama-nama dungeon yang tersedia dalam sistem.
+</p>
+
+```c
+void print_hunters(struct SystemData *sys) {
+    printf("\n=== HUNTER INFO ===\n");
+    for (int i = 0; i < sys->num_hunters; i++) {
+        struct Hunter *h = &sys->hunters[i];
+        printf("Name: %s\tLevel: %d\tEXP: %d\tATK: %d\tHP: %d\tDEF: %d\tStatus: %s\n",
+            h->username, h->level, h->exp, h->atk, h->hp, h->def,
+            h->banned ? "BANNED" : "Active");
+    }
+}
+```
+
+<p>
+Kode tersebut berfungsi untuk menampilkan informasi tentang semua hunter yang ada dalam sistem, termasuk status mereka (apakah aktif atau dibanned).
+</p>
+
+```c
+void print_dungeons(struct SystemData *sys) {
+    printf("\n=== DUNGEON INFO ===\n");
+    for (int i = 0; i < sys->num_dungeons; i++) {
+        struct Dungeon *d = &sys->dungeons[i];
+        printf("[Dungeon %d]\n", i + 1);
+        printf("Name: %s\n", d->name);
+        printf("Minimum Level: %d\n", d->min_level);
+        printf("EXP Reward: %d\n", d->exp);
+        printf("ATK: %d\n", d->atk);
+        printf("HP: %d\n", d->hp);
+        printf("DEF: %d\n", d->def);
+        printf("Key: %d\n\n", d->shm_key);
+    }
+}
+```
+
+<p>
+Kode tersebut berfungsi untuk menampilkan informasi tentang semua dungeon yang ada dalam sistem.
+</p>
+
+```c
+void generate_dungeon(struct SystemData *sys) {
+    if (sys->num_dungeons >= MAX_DUNGEONS) {
+        printf("Dungeon limit reached.\n");
+        return;
+    }
+
+    struct Dungeon *d = &sys->dungeons[sys->num_dungeons];
+
+    strcpy(d->name, dungeon_names[rand() % (sizeof(dungeon_names)/sizeof(char*))]);
+    d->min_level = (rand() % 5) + 1;
+    d->exp = (rand() % 151) + 150;
+    d->atk = (rand() % 51) + 100;
+    d->hp = (rand() % 51) + 50;
+    d->def = (rand() % 26) + 25;
+    d->shm_key = rand();
+
+    sys->num_dungeons++;
+    printf("\nDungeon generated!\nName: %s\nMinimum Level: %d\n", d->name, d->min_level);
+}
+
+```
+
+<p>
+Kode tersebut berfungsi untuk membuat dungeon baru secara acak dan menambahkannya ke dalam sistem, asalkan jumlah dungeon belum mencapai batas maksimum yang ditentukan oleh
+</p>
+
+
+```c
+void ban_hunter(struct SystemData *sys) {
+    char name[50];
+    printf("Enter hunter name to ban: ");
+    scanf("%s", name);
+    for (int i = 0; i < sys->num_hunters; i++) {
+        if (strcmp(sys->hunters[i].username, name) == 0) {
+            sys->hunters[i].banned = 1;
+            printf("Hunter %s has been banned.\n", name);
+            return;
+        }
+    }
+    printf("Hunter not found.\n");
+}
+```
+
+<p>
+Kode tersebut berfungsi untuk membuat hunter tertentu menjadi dibanned (dilarang), yang berarti hunter tersebut tidak bisa lagi berpartisipasi dalam fitur seperti raid dungeon atau battle.
+</p>
+
+```c
+void unban_hunter(struct SystemData *sys) {
+    char name[50];
+    printf("Enter hunter name to unban: ");
+    scanf("%s", name);
+    for (int i = 0; i < sys->num_hunters; i++) {
+        if (strcmp(sys->hunters[i].username, name) == 0) {
+            sys->hunters[i].banned = 0;
+            printf("Hunter %s has been unbanned.\n", name);
+            return;
+        }
+    }
+    printf("Hunter not found.\n");
+}
+```
+
+<p>
+Kode tersebut berfungsi untuk membuka status banned pada hunter tertentu, yang berarti hunter tersebut akan dapat berpartisipasi kembali dalam fitur seperti raid dungeon atau battle setelah statusnya diubah menjadi tidak dibanned.
+</p>
+
+```c
+void reset_hunter(struct SystemData *sys) {
+    char name[50];
+    printf("Enter hunter name to reset: ");
+    scanf("%s", name);
+    for (int i = 0; i < sys->num_hunters; i++) {
+        if (strcmp(sys->hunters[i].username, name) == 0) {
+            printf("Are you sure you want to reset hunter '%s'? (y/n): ", name);
+            char confirm;
+            scanf(" %c", &confirm);
+            if (confirm == 'y' || confirm == 'Y') {
+                sys->hunters[i].level = 1;
+                sys->hunters[i].exp = 0;
+                sys->hunters[i].atk = 10;
+                sys->hunters[i].hp = 100;
+                sys->hunters[i].def = 5;
+                sys->hunters[i].banned = 0;
+                printf("Hunter %s has been reset.\n", name);
+            } else {
+                printf("Reset cancelled.\n");
+            }
+            return;
+        }
+    }
+    printf("Hunter not found.\n");
+}
+```
+
+<p>
+Kode tersebut berfungsi untuk mengatur ulang status (reset) dari seorang hunter, yang meliputi atribut-atribut seperti level, EXP, ATK, HP, DEF, dan status banned. Ini memungkinkan hunter untuk mulai dari awal lagi, dengan nilai awal yang telah ditentukan.
+</p>
+
+```c
+int main() {
+    key_t key = get_system_key();
+    int shmid = shmget(key, sizeof(struct SystemData), IPC_CREAT | 0666);
+    if (shmid == -1) {
+        perror("shmget");
+        return 1;
+    }
+
+    struct SystemData *sys = shmat(shmid, NULL, 0);
+    if (sys == (void *)-1) {
+        perror("shmat");
+        return 1;
+    }
+
+    // Inisialisasi hanya jika pertama kali
+    if (sys->num_hunters == 0 && sys->num_dungeons == 0) {
+        sys->num_hunters = 0;
+        sys->num_dungeons = 0;
+        sys->current_notification_index = 0;
+    }
+
+    srand(time(NULL));
+
+    while (1) {
+        printf("\n=== SYSTEM MENU ===\n");
+        printf("1. View Hunter Info\n");
+        printf("2. View Dungeon Info\n");
+        printf("3. Generate Dungeon\n");
+        printf("4. Ban Hunter\n");
+        printf("5. Unban Hunter\n");
+        printf("6. Reset Hunter\n");
+        printf("7. Exit\n");
+        printf("Choice: ");
+
+        int choice;
+        scanf("%d", &choice);
+
+        switch (choice) {
+            case 1: print_hunters(sys); break;
+            case 2: print_dungeons(sys); break;
+            case 3: generate_dungeon(sys); break;
+            case 4: ban_hunter(sys); break;
+            case 5: unban_hunter(sys); break;
+            case 6: reset_hunter(sys); break;
+            case 7:
+                shmdt(sys);
+                printf("Exiting system...\n");
+                return 0;
+            default:
+                printf("Invalid choice.\n");
+        }
+    }
+
+    return 0;
+}
+
+```
+
+<p>
+Kode tersebut berfungsi untuk menjalankan program utama yang mengelola sistem hunter dan dungeon berbasis shared memory, di mana pengguna dapat mengakses beberapa menu untuk melihat informasi hunter dan dungeon, serta melakukan beberapa tindakan administratif seperti menghasilkan dungeon, mem-ban atau unban hunter, atau mereset hunter.
+</p>
