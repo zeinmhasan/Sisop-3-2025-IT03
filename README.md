@@ -541,10 +541,7 @@ else if (strcmp(argv[1], "-list") == 0) {
 
 ##  Format Log `delivery.log`
 
-```text
-[08/05/2025 12:34:56] [AGENT A] Express package delivered to Alice in Surabaya
-[08/05/2025 12:35:00] [zain] Reguler package delivered to Bob in Malang
-```
+![Image](https://github.com/user-attachments/assets/f8cb8c99-9277-466c-93c6-e2e5d6994797)
 
 ##  output
 ![Image](https://github.com/user-attachments/assets/2dab3d25-e746-4026-a467-3f34b229485b)
