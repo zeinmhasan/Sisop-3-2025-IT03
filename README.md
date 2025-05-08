@@ -349,3 +349,207 @@ cd client
 ./image_client
 
 ```
+
+<h2 id="soal1">Soal1</h2>
+
+#  Delivery Management System
+
+Sistem manajemen pengiriman berbasis shared memory dan multithreading dengan dua program utama: `delivery_agent` dan `dispatcher`.
+
+---
+
+##  Penjelasan `delivery_agent.c`
+
+###  Header dan Utility
+
+```c
+void log_delivery(const char *agent, const char *type, const char *name, const char *address) {
+    FILE *log = fopen("delivery.log", "a");
+    if (!log) return;
+    flock(fileno(log), LOCK_EX); // Lock file
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    fprintf(log, "[%02d/%02d/%04d %02d:%02d:%02d] [%s] %s package delivered to %s in %s\n",
+        t->tm_mday, t->tm_mon+1, t->tm_year+1900, t->tm_hour, t->tm_min, t->tm_sec,
+        agent, type, name, address);
+    fflush(log);
+    flock(fileno(log), LOCK_UN);
+    fclose(log);
+}
+```
+
+
+```c
+void* agent_thread(void *arg) {
+    char *agent = (char*) arg;
+    while (1) {
+        pthread_mutex_lock(&shared_data->lock);
+        for (int i = 0; i < shared_data->count; i++) {
+            if (shared_data->orders[i].type == EXPRESS && shared_data->orders[i].status == PENDING) {
+                shared_data->orders[i].status = DELIVERED;
+                strcpy(shared_data->orders[i].agent, agent);
+                log_delivery(agent, "Express", shared_data->orders[i].name, shared_data->orders[i].address);
+                break;
+            }
+        }
+        pthread_mutex_unlock(&shared_data->lock);
+        sleep(1);
+    }
+    return NULL;
+}
+```
+
+- `#define MAX_ORDERS 100` → Batas maksimum pesanan yang dapat diproses.
+- Menggunakan **Shared Memory** (`shmget`, `shmat`) untuk berbagi data antar proses dengan `dispatcher`.
+- Menggunakan **Thread** (`pthread_create`) untuk menangani pengiriman otomatis oleh agen.
+
+###  Fungsi `read_csv()`
+
+```c
+void read_csv_and_store(const char *filename) {
+    FILE *f = fopen(filename, "r");
+    char line[512];
+    while (fgets(line, sizeof(line), f)) {
+        char *name = strtok(line, ",");
+        char *address = strtok(NULL, ",");
+        char *type_str = strtok(NULL, "\n");
+        Order *o = &shared_data->orders[shared_data->count++];
+        strncpy(o->name, name, MAX_NAME);
+        strncpy(o->address, address, MAX_ADDRESS);
+        o->type = parse_type(type_str);
+        o->status = PENDING;
+        strcpy(o->agent, "-");
+    }
+    fclose(f);
+}
+```
+- Membaca file `delivery_order.csv`.
+- Menyimpan data pesanan ke shared memory.
+
+###  Fungsi `*express_delivery()`
+
+- Setiap thread agen (`AGENT A`, `AGENT B`, `AGENT C`) akan:
+  - Mengambil pesanan bertipe **Express**.
+  - Melakukan simulasi pengiriman.
+  - Mengubah status menjadi `DELIVERED`.
+  - Menulis entri log ke `delivery.log`.
+
+###  Fungsi `main()`
+
+```c
+int main() {
+    key_t key = ftok("delivery_agent.c", 65);
+    int shmid = shmget(key, sizeof(SharedData), 0666 | IPC_CREAT);
+    shared_data = (SharedData*) shmat(shmid, NULL, 0);
+
+    shared_data->count = 0;
+    pthread_mutexattr_t mattr;
+    pthread_mutexattr_init(&mattr);
+    pthread_mutexattr_setpshared(&mattr, PTHREAD_PROCESS_SHARED);
+    pthread_mutex_init(&shared_data->lock, &mattr);
+
+    read_csv_and_store("delivery_order.csv");
+
+    pthread_t t1, t2, t3;
+    pthread_create(&t1, NULL, agent_thread, "AGENT A");
+    pthread_create(&t2, NULL, agent_thread, "AGENT B");
+    pthread_create(&t3, NULL, agent_thread, "AGENT C");
+
+    pthread_join(t1, NULL);
+    pthread_join(t2, NULL);
+    pthread_join(t3, NULL);
+
+    shmdt(shared_data);
+    return 0;
+}
+```
+- Membuat segmen shared memory.
+- Membaca pesanan dari file CSV.
+- Membuat 3 thread untuk pengiriman otomatis oleh agen.
+- Menunggu semua thread selesai (`pthread_join`).
+
+---
+
+##  Penjelasan `dispatcher.c`
+
+### ⚙ Mode Operasi
+
+Program dijalankan dengan argumen tertentu:
+
+```c
+if (strcmp(argv[1], "-deliver") == 0 && argc == 3) {
+    char *nama = argv[2];
+    for (int i = 0; i < shared_data->count; i++) {
+        if (strcmp(shared_data->orders[i].name, nama) == 0 && shared_data->orders[i].type == REGULER) {
+            if (shared_data->orders[i].status == DELIVERED) {
+                printf("Order sudah dikirim.\n");
+                return 0;
+            }
+            shared_data->orders[i].status = DELIVERED;
+            strcpy(shared_data->orders[i].agent, get_username());
+            log_delivery(shared_data->orders[i].agent, "Reguler", nama, shared_data->orders[i].address);
+            printf("Order untuk %s telah dikirim.\n", nama);
+            return 0;
+        }
+    }
+    printf("Order tidak ditemukan.\n");
+}
+```
+
+- `-deliver <Nama>`
+  → Menandai pesanan **Reguler** sebagai dikirim.  
+  → Menulis log dengan username (`getlogin()`).
+  → Akan gagal jika:
+    - Nama tidak ditemukan.
+    - Tipe pesanan bukan Reguler.
+    - Sudah dikirim sebelumnya.
+
+```c
+else if (strcmp(argv[1], "-status") == 0 && argc == 3) {
+    char *nama = argv[2];
+    for (int i = 0; i < shared_data->count; i++) {
+        if (strcmp(shared_data->orders[i].name, nama) == 0) {
+            if (shared_data->orders[i].status == DELIVERED)
+                printf("Status for %s: Delivered by %s\n", nama, shared_data->orders[i].agent);
+            else
+                printf("Status for %s: Pending\n", nama);
+            return 0;
+        }
+    }
+    printf("Order tidak ditemukan.\n");
+}
+```
+- `-status <Nama>`  
+  → Menampilkan status pengiriman berdasarkan nama.
+
+```c
+else if (strcmp(argv[1], "-list") == 0) {
+    for (int i = 0; i < shared_data->count; i++) {
+        printf("%s - %s\n", shared_data->orders[i].name,
+            shared_data->orders[i].status == DELIVERED ? "Delivered" : "Pending");
+    }
+}
+```
+- `-list`  
+  → Menampilkan seluruh daftar pesanan dan statusnya.
+
+### 🔗 Shared Memory
+
+- Mengakses shared memory yang telah dibuat oleh `delivery_agent.c`.
+- Menggunakan `ftok("delivery_agent.c", 65)` agar key konsisten antara kedua program.
+
+---
+
+## 📡 Interaksi Proses
+
+- Komunikasi antar proses dilakukan melalui **Shared Memory IPC**.
+- Kedua program (`delivery_agent` dan `dispatcher`) membaca dan menulis ke area memori yang sama.
+
+---
+
+## 📝 Format Log `delivery.log`
+
+```text
+[08/05/2025 12:34:56] [AGENT A] Express package delivered to Alice in Surabaya
+[08/05/2025 12:35:00] [zain] Reguler package delivered to Bob in Malang
+```
