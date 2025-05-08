@@ -306,12 +306,6 @@ int main() {
 
 ---
 
-##  Contoh Format File `.txt`
-FFDB0043000604040504040506050505060706060708090E09090...
-
-
----
-
 ##  Kelebihan
 
 - Komunikasi client-server efisien via TCP.
@@ -321,12 +315,6 @@ FFDB0043000604040504040506050505060706060708090E09090...
 
 ---
 
-##  Catatan Keamanan
-
-- Protokol tidak mengenkripsi komunikasi (bisa pakai TLS di masa depan).
-- Validasi nama file masih minimal (rentan path traversal jika tidak dibatasi).
-
----
 
 ##  Cara Menjalankan
 
@@ -349,6 +337,10 @@ cd client
 ./image_client
 
 ```
+
+##  output
+![Image](https://github.com/user-attachments/assets/9219cfff-d1a1-49e6-9f8c-b0718ef162c4)
+![Image](https://github.com/user-attachments/assets/c274d27b-911f-4d21-aa0c-a8c5f3738a9d)
 
 <h2 id="soal2">Soal2</h2>
 
@@ -553,6 +545,10 @@ else if (strcmp(argv[1], "-list") == 0) {
 [08/05/2025 12:34:56] [AGENT A] Express package delivered to Alice in Surabaya
 [08/05/2025 12:35:00] [zain] Reguler package delivered to Bob in Malang
 ```
+
+##  output
+![Image](https://github.com/user-attachments/assets/2dab3d25-e746-4026-a467-3f34b229485b)
+![Image](https://github.com/user-attachments/assets/f7b6eb0a-470a-4187-a90f-8fe0989a4368)
 
 <h2 id="soal3">Soal3</h2>
 
