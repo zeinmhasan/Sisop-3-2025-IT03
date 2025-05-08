@@ -93,12 +93,40 @@ project-root/
 
 ### Header dan Utility
 
+```c
+void reverse_string(char *str) {
+    int len = strlen(str);
+    for (int i = 0; i < len / 2; ++i) {
+        char tmp = str[i];
+        str[i] = str[len - i - 1];
+        str[len - i - 1] = tmp;
+    }
+}
+```
+
 - `#define MAX_BUFFER 4096` → Ukuran buffer komunikasi.
 - Fungsi `reverse_string()` → Membalik string.
 - Fungsi `read_file()` → Membaca isi file `.txt` untuk dikirim.
 - Fungsi `write_file()` → Menyimpan file JPEG hasil download.
 
 ### Fungsi `upload_file()`
+
+```c
+void upload_file(int sockfd) {
+    char filename[256];
+    printf("Masukkan nama file (.txt) terenkripsi: ");
+    scanf("%s", filename);
+    
+    char path[512];
+    snprintf(path, sizeof(path), "secrets/%s", filename);
+    
+    char *data = read_file(path);
+    reverse_string(data);
+
+    dprintf(sockfd, "UPLOAD %s\n%s", filename, data);
+    ...
+}
+```
 
 - Membaca file `.txt` terenkripsi.
 - Melakukan reverse string.
@@ -107,11 +135,34 @@ project-root/
 
 ### Fungsi `download_file()`
 
+```c
+void download_file(int sockfd) {
+    char filename[256];
+    printf("Masukkan nama file JPEG yang ingin didownload: ");
+    scanf("%s", filename);
+    
+    dprintf(sockfd, "DOWNLOAD %s\n", filename);
+    ...
+}
+```
 - Mengirim perintah `DOWNLOAD <nama_file>\n`.
 - Menerima stream JPEG dari server.
 - Menyimpannya di direktori `client/`.
 
 ### Fungsi `main()`
+
+```c
+int main() {
+    ...
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    ...
+    while (1) {
+        printf("\nMenu:\n1. Upload File\n2. Download File\n3. Keluar\nPilihan: ");
+        scanf("%d", &choice);
+        ...
+    }
+}
+```
 
 - Menampilkan menu:
   - Upload File
@@ -126,16 +177,57 @@ project-root/
 
 ### Fungsi `daemonize()`
 
+```c
+void daemonize() {
+    pid_t pid = fork();
+    if (pid < 0) exit(EXIT_FAILURE);
+    if (pid > 0) exit(EXIT_SUCCESS);
+
+    setsid();
+    ...
+    close(STDIN_FILENO); close(STDOUT_FILENO); close(STDERR_FILENO);
+}
+```
+
 - Membuat server berjalan di background.
 - Menutup terminal (STDIN, STDOUT, STDERR).
 - Menulis log ke syslog.
 
 ### Fungsi `log_action()` dan `create_directory()`
 
+```c
+void log_action(const char *message) {
+    FILE *log = fopen("server/server.log", "a");
+    ...
+}
+void create_directory(const char *path) {
+    struct stat st = {0};
+    if (stat(path, &st) == -1) {
+        mkdir(path, 0700);
+    }
+}
+```
+
 - `log_action()` → Mencatat aktivitas ke `server/server.log`.
 - `create_directory()` → Membuat direktori jika belum ada.
 
 ### Fungsi `decrypt_data()`
+
+```c
+char *decrypt_data(const char *input) {
+    size_t len = strlen(input);
+    char *reversed = strdup(input);
+    reverse_string(reversed);
+
+    unsigned char *decoded = malloc(len / 2);
+    for (size_t i = 0; i < len; i += 2) {
+        sscanf(reversed + i, "%2hhx", &decoded[i / 2]);
+    }
+
+    free(reversed);
+    return (char *)decoded;
+}
+```
 
 - Melakukan:
   - Reverse string.
@@ -144,6 +236,24 @@ project-root/
 
 ### Fungsi `handle_client()`
 
+```c
+void handle_client(int client_sock) {
+    char buffer[MAX_BUFFER];
+    memset(buffer, 0, sizeof(buffer));
+    read(client_sock, buffer, sizeof(buffer) - 1);
+
+    if (strncmp(buffer, "UPLOAD", 6) == 0) {
+        ...
+        char *jpeg_data = decrypt_data(hex_data);
+        ...
+        write_file(filepath, jpeg_data, strlen(jpeg_data));
+        write(client_sock, response, strlen(response));
+    } else if (strncmp(buffer, "DOWNLOAD", 8) == 0) {
+        ...
+        write(client_sock, file_data, file_size);
+    }
+}
+```
 Menangani permintaan dari client:
 
 #### UPLOAD
@@ -161,6 +271,24 @@ Menangani permintaan dari client:
 
 ### Fungsi `main()`
 
+```c
+int main() {
+    daemonize();
+    create_directory("server/database");
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    ...
+    while (1) {
+        int client_sock = accept(sockfd, ...);
+        if (fork() == 0) {
+            handle_client(client_sock);
+            close(client_sock);
+            exit(0);
+        }
+        close(client_sock);
+    }
+}
+```
 - Membuka socket TCP di port `12345`.
 - Melakukan bind dan listen.
 - Menerima koneksi menggunakan `accept()`.
